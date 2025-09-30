@@ -1,0 +1,229 @@
+---
+title: "Tugas praktikum TPG"
+author: "Nisrina Suci Fadila (G1401231021)"
+date: "2025-09-24"
+output: html_document
+---
+
+# 1. Perbandingan Dua Vektor Nilai Tengah Sampel Berpasanga
+H0: Tidak ada perbedaan rata-rata vektor (berat, lemak) sebelum dan sesudah diet.
+
+H1: Ada perbedaan rata-rata vektor (berat, lemak) sebelum dan sesudah diet.
+
+```{r}
+# Kasus: Berat badan dan Persentase Lemak sebelum & setelah program diet
+library(MASS)
+library(MVTests)
+
+set.seed(21)
+n <- 30  
+
+# Sebelum program diet (lebih tinggi berat dan persentase lemak)
+mu_before <- c(78, 28)  # Berat (kg), PersenLemak (%)
+Sigma_b <- matrix(c(40, 6, 6, 9), 2)  # kovarian
+data_before <- mvrnorm(n, mu = mu_before, Sigma = Sigma_b)
+
+# Sesudah program diet (rata-rata turun)
+mu_after <- c(74, 24)
+Sigma_a <- Sigma_b # asumsi kovarian sama untuk pembangkitan
+data_after <- mvrnorm(n, mu = mu_after, Sigma = Sigma_a)
+
+# Data frame
+d_berat <- data_before[,1] - data_after[,1]
+d_lemak <- data_before[,2] - data_after[,2]
+dtframe <- data.frame(d_berat, d_lemak)
+dtframe
+```
+
+```{r}
+# Tampilkan ringkasan
+head(dtframe)
+apply(dtframe, 2, mean)
+cov(dtframe)
+```
+
+## Uji Hotelling T2 untuk sampel berpasangan (One-sample on difference vector)
+```{r}
+mean0 = c(0,0)
+result_paired = OneSampleHT2(dtframe, mu0 = mean0, alpha = 0.05)
+summary(result_paired)
+```
+Secara multivariat, diet memberikan dampak signifikan terhadap perubahan komposisi tubuh. Namun, perubahan yang paling nyata terlihat pada penurunan kadar lemak, bukan berat badan.
+
+## Selang kepercayaan simultan
+```{r}
+result_paired$CI
+```
+Berat : Tidak terdapat perbedaan signifikan.
+
+Persen Lemak : Terdapat perbedaan signifikan, dengan rata-rata perbedaan antara 0.75 hingga 4.18.
+
+## Selang kepercayaan Bonferroni
+```{r}
+bon = function(mu,S,n,alpha,k){
+ p = length(mu)
+ lower = mu[k] - sqrt(S[k,k]/n) * abs(qt(alpha/(2*p), df=n-1))
+ upper = mu[k] + sqrt(S[k,k]/n) * abs(qt(alpha/(2*p), df=n-1))
+ c(lower = lower, upper = upper)
+}
+n_diff = nrow(dtframe)
+```
+
+
+```{r}
+# Bonferroni untuk masing-masing komponen
+bon(apply(dtframe,2,mean), cov(dtframe), n_diff, 0.05, 1)  # Berat
+bon(apply(dtframe,2,mean), cov(dtframe), n_diff, 0.05, 2)  # Persen Lemak
+
+```
+Baik berat maupun persen lemak berbeda signifikan antar kelompok pada taraf signifikansi 5% dengan koreksi Bonferroni.
+
+# 2. Perbandingan Dua Vektor Nilai Tengah Sampel Saling Bebas Ragam Sama
+```{r}
+# Kasus: Berat & PersenLemak - Rutin Olahraga vs Tidak Rutin Olahraga
+set.seed(21)
+library(Hotelling)
+n1 <- 25  # rutin olahraga
+n2 <- 25  # tidak rutin
+
+mu_sport    <- c(72, 22)  # rata-rata lebih rendah berat & lemak
+mu_nonsport <- c(78, 27)
+
+Sigma_common <- matrix(c(50, 8, 8, 12), 2) # diasumsikan ragam sama
+
+data_sport    <- mvrnorm(n1, mu = mu_sport, Sigma = Sigma_common)
+data_nonsport <- mvrnorm(n2, mu = mu_nonsport, Sigma = Sigma_common)
+
+colnames(data_sport) <- c("Berat","PersenLemak")
+colnames(data_nonsport) <- c("Berat","PersenLemak")
+
+data_sport
+data_nonsport
+```
+
+```{r}
+# Rataan dan kovarian
+xbar1 = apply(data_sport, 2, mean)
+xbar2 = apply(data_nonsport, 2, mean)
+cov1 = cov(data_sport); cov2 = cov(data_nonsport)
+
+xbar1; xbar2
+cov1; cov2
+```
+
+```{r}
+# S gabungan
+s_gab = ((n1-1)*cov1 + (n2-1)*cov2)/(n1+n2-2)
+s_gab
+```
+
+## Uji Hotelling (var.equal = TRUE)
+```{r}
+t2_homogen = hotelling.test(data_sport, data_nonsport, var.equal = TRUE)
+t2_homogen
+```
+Uji Hotelling menunjukkan bahwa secara simultan (berdasarkan gabungan variabel Berat dan Persen Lemak) terdapat perbedaan yang sangat signifikan antara kelompok sport dan non-sport.
+
+## Selang kepercayaan simultan
+```{r}
+T.ci = function(mu1, mu2, S_gab, n1, n2, avec=rep(1,length(mu1)), level=0.95){
+  p = length(mu1)
+  mu = mu1 - mu2
+  cval = qf(level, p, n1 + n2 - p - 1) * p * (n1 + n2 - 2) / (n1 + n2 - p - 1)
+  zhat = crossprod(avec, mu)
+  zvar = crossprod(avec, S_gab %*% avec) * (1/n1 + 1/n2)
+  const = sqrt(cval * zvar)
+  c(lower = zhat - const, upper = zhat + const)
+}
+
+# CI untuk Berat
+T.ci(xbar1, xbar2, s_gab, n1, n2, avec = c(1,0), level = 0.95)
+# CI untuk PersenLemak
+T.ci(xbar1, xbar2, s_gab, n1, n2, avec = c(0,1), level = 0.95)
+```
+Baik berat maupun persen lemak menunjukkan perbedaan signifikan antara dua kelompok.
+Karena seluruh selang kepercayaan berada pada sisi negatif, maka kelompok pertama memiliki berat dan persen lemak yang lebih rendah dibanding kelompok kedua.
+
+## Selang kepercayaan Bonferroni
+```{r}
+bon_indep = function(mu1, mu2 ,S, n1, n2, alpha, k){
+ p = length(mu1)
+ mu = mu1 - mu2
+ lower = mu[k] - sqrt((S[k,k]) *(1/n1 + 1/n2)) * abs(qt(alpha/(2*p), df=n1 + n2 - 2))
+ upper = mu[k] + sqrt((S[k,k]) *(1/n1 + 1/n2)) * abs(qt(alpha/(2*p), df=n1 + n2 - 2))
+ ci = c(lower = lower, upper = upper)
+ names(ci) = c("lower","upper")
+ ci
+}
+
+# Berat
+bon_indep(xbar1, xbar2, s_gab, n1, n2, 0.05, 1)
+# PersenLemak
+bon_indep(xbar1, xbar2, s_gab, n1, n2, 0.05, 2)
+```
+Dengan pendekatan Bonferroni, baik berat maupun persen lemak berbeda signifikan antara dua kelompok.
+Karena semua interval berada di sisi negatif, maka kelompok pertama memiliki berat dan persen lemak lebih rendah daripada kelompok kedua.
+
+# 3. Perbandingan Dua Vektor Nilai Tengah Sampel Saling Bebas Ragam Tidak Sama
+```{r}
+# Kasus: Berat & PersenLemak - Tidur >=7 jam vs Tidur <5 jam
+set.seed(21)
+
+n1 <- 18  # tidur cukup
+n2 <- 18  # tidur sedikit
+
+mu_sleep_more <- c(70, 23)
+Sigma1 <- matrix(c(30, 6, 6, 10), 2)
+
+mu_sleep_less <- c(80, 29)
+Sigma2 <- matrix(c(70, 15, 15, 30), 2)  # lebih variabilitas pada yang kurang tidur
+
+data_sleep_more <- mvrnorm(n1, mu = mu_sleep_more, Sigma = Sigma1)
+data_sleep_less <- mvrnorm(n2, mu = mu_sleep_less, Sigma = Sigma2)
+
+colnames(data_sleep_more) <- c("Berat","PersenLemak")
+colnames(data_sleep_less) <- c("Berat","PersenLemak")
+data_sleep_more
+data_sleep_less
+```
+
+```{r}
+# Rataan & kovarian
+xbar1 = apply(data_sleep_more, 2, mean)
+xbar2 = apply(data_sleep_less, 2, mean)
+cov1 = cov(data_sleep_more); cov2 = cov(data_sleep_less)
+
+xbar1; xbar2
+cov1; cov2
+```
+
+## Uji Hotelling (var.equal = FALSE)
+```{r}
+t2_not_homogen = hotelling.test(data_sleep_more, data_sleep_less, var.equal = FALSE)
+t2_not_homogen
+```
+Karena p-value = 0.001735 < 0.05, maka H₀ ditolak. Artinya, terdapat perbedaan signifikan secara multivariat antara kelompok dengan durasi tidur lebih banyak (sleep_more) dan kelompok dengan durasi tidur lebih sedikit (sleep_less).
+
+## Selang Kepercayaan Simultan
+```{r}
+T.ci_unequal = function(mu1, mu2, S1, S2, n1, n2, avec=rep(1,length(mu1)), level=0.95){
+  p = length(mu1)
+  mu = mu1 - mu2
+  cval = qchisq(level, p)
+  zhat = crossprod(avec, mu)
+  zvar = crossprod(avec, S1 %*% avec)/n1 + crossprod(avec, S2 %*% avec)/n2
+  const = sqrt(cval * zvar)
+  c(lower = zhat - const, upper = zhat + const)
+}
+```
+
+```{r}
+# CI untuk Berat
+T.ci_unequal(xbar1, xbar2, cov1, cov2, n1, n2, avec = c(1,0), level = 0.95)
+# CI untuk PersenLemak
+T.ci_unequal(xbar1, xbar2, cov1, cov2, n1, n2, avec = c(0,1), level = 0.95)
+```
+Baik berat maupun persen lemak berbeda signifikan antara dua kelompok.
+Karena kedua interval kepercayaan berada di sisi negatif, maka dapat disimpulkan bahwa kelompok pertama memiliki berat dan persen lemak yang lebih rendah dibandingkan kelompok kedua.
+
+
